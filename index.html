@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Clean Reveal Fluid Trail</title>
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
   <style>
     body {
       margin: 0;
@@ -30,149 +31,162 @@
 
   <div class="ui font-serif">
     <h1 class="text-7xl font-bold uppercase tracking-tighter italic">Hidden Nature</h1>
-    <p class="text-sm opacity-40 tracking-[0.3em] ml-2">MOTION LINGERS. TRUTH REMAINS STILL.</p>
+    <p class="text-sm opacity-40 tracking-[0.3em] ml-2">
+      MOTION LINGERS. TRUTH REMAINS STILL.
+    </p>
   </div>
 
   <div id="container"></div>
 
+  <!-- TRAIL SHADER -->
   <script id="trailFragment" type="x-shader/x-fragment">
+    precision mediump float;
+
     varying vec2 vUv;
-        uniform sampler2D uBuffer;
-        uniform vec2 uMouse;
-        uniform float uFade;
-        uniform float uAspect;
+    uniform sampler2D uBuffer;
+    uniform vec2 uMouse;
+    uniform float uFade;
+    uniform float uAspect;
 
-        void main() {
-            vec4 prev = texture2D(uBuffer, vUv);
-            vec2 uvAdj = vUv * vec2(uAspect, 1.0);
-            vec2 mouseAdj = uMouse * vec2(uAspect, 1.0);
-            
-            float dist = distance(uvAdj, mouseAdj);
-            // Soft brush for the trail
-            float brush = smoothstep(0.18, 0.0, dist); 
-            
-            // The magic: (Old state * 0.98) + new mouse position
-            gl_FragColor = vec4(prev.rgb * uFade + brush, 1.0);
-        }
-    </script>
+    void main() {
+        vec4 prev = texture2D(uBuffer, vUv);
 
+        vec2 uvAdj = vUv * vec2(uAspect, 1.0);
+        vec2 mouseAdj = uMouse * vec2(uAspect, 1.0);
+
+        float dist = distance(uvAdj, mouseAdj);
+        float brush = smoothstep(0.18, 0.0, dist);
+
+        gl_FragColor = vec4(prev.rgb * uFade + brush, 1.0);
+    }
+  </script>
+
+  <!-- MAIN SHADER -->
   <script id="mainFragment" type="x-shader/x-fragment">
+    precision mediump float;
+
     varying vec2 vUv;
-        uniform sampler2D tMan;
-        uniform sampler2D tDevil;
-        uniform sampler2D tMask;
+    uniform sampler2D tMan;
+    uniform sampler2D tDevil;
+    uniform sampler2D tMask;
 
-        void main() {
-            // Get the trail value (0.0 to 1.0)
-            float mask = texture2D(tMask, vUv).r;
-            mask = clamp(mask, 0.0, 1.0);
+    void main() {
+        float mask = texture2D(tMask, vUv).r;
+        mask = clamp(mask, 0.0, 1.0);
 
-            // Fetch both images using standard, undistorted UVs
-            vec4 color1 = texture2D(tMan, vUv);
-            vec4 color2 = texture2D(tDevil, vUv);
-            
-            // Mix them based on the lingering mask
-            gl_FragColor = mix(color1, color2, mask);
-        }
-    </script>
+        vec4 color1 = texture2D(tMan, vUv);
+        vec4 color2 = texture2D(tDevil, vUv);
 
+        gl_FragColor = mix(color1, color2, mask);
+    }
+  </script>
+
+  <!-- VERTEX SHADER -->
   <script id="vertexShader" type="x-shader/x-vertex">
     varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position, 1.0);
-        }
-    </script>
+
+    void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+    }
+  </script>
 
   <script>
-    let scene, camera, renderer, bufferScene, bufferA, bufferB;
-        let mainMaterial, trailMaterial;
-        let mouse = new THREE.Vector2(0.5, 0.5);
-        let targetMouse = new THREE.Vector2(0.5, 0.5);
+    let scene, bufferScene, camera, renderer;
+    let bufferA, bufferB;
+    let mainMaterial, trailMaterial;
 
-        function init() {
-            scene = new THREE.Scene();
-            bufferScene = new THREE.Scene();
-            camera = new THREE.Camera();
+    const mouse = new THREE.Vector2(0.5, 0.5);
+    const targetMouse = new THREE.Vector2(0.5, 0.5);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('container').appendChild(renderer.domElement);
+    init();
+    animate();
 
-            const options = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.FloatType };
-            bufferA = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, options);
-            bufferB = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, options);
+    function init() {
+      scene = new THREE.Scene();
+      bufferScene = new THREE.Scene();
+      camera = new THREE.Camera();
 
-            const loader = new THREE.TextureLoader();
-            const texMan = loader.load('goodloader.jpg');
-            const texDevil = loader.load('badloader.jpg');
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      document.getElementById("container").appendChild(renderer.domElement);
 
-            trailMaterial = new THREE.ShaderMaterial({
-                uniforms: {
-                    uBuffer: { value: null },
-                    uMouse: { value: mouse },
-                    uFade: { value: 0.96 }, // FADE SPEED: 0.99 is very slow, 0.9 is fast
-                    uAspect: { value: window.innerWidth / window.innerHeight }
-                },
-                vertexShader: document.getElementById('vertexShader').textContent,
-                fragmentShader: document.getElementById('trailFragment').textContent
-            });
+      const options = {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType
+      };
 
-            const trailMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), trailMaterial);
-            bufferScene.add(trailMesh);
+      bufferA = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, options);
+      bufferB = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, options);
 
-            mainMaterial = new THREE.ShaderMaterial({
-                uniforms: {
-                    tMan: { value: texMan },
-                    tDevil: { value: texDevil },
-                    tMask: { value: null }
-                },
-                vertexShader: document.getElementById('vertexShader').textContent,
-                fragmentShader: document.getElementById('mainFragment').textContent
-            });
+      const loader = new THREE.TextureLoader();
+      const texMan = loader.load("goodloader.jpg");
+      const texDevil = loader.load("badloader.jpg");
 
-            const mainMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mainMaterial);
-            scene.add(mainMesh);
+      trailMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uBuffer: { value: null },
+          uMouse: { value: mouse },
+          uFade: { value: 0.96 },
+          uAspect: { value: window.innerWidth / window.innerHeight }
+        },
+        vertexShader: document.getElementById("vertexShader").textContent,
+        fragmentShader: document.getElementById("trailFragment").textContent
+      });
 
-            window.addEventListener('mousemove', e => {
-                targetMouse.x = e.clientX / window.innerWidth;
-                targetMouse.y = 1 - (e.clientY / window.innerHeight);
-            });
+      const trailMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), trailMaterial);
+      bufferScene.add(trailMesh);
 
-            animate();
-        }
+      mainMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          tMan: { value: texMan },
+          tDevil: { value: texDevil },
+          tMask: { value: null }
+        },
+        vertexShader: document.getElementById("vertexShader").textContent,
+        fragmentShader: document.getElementById("mainFragment").textContent
+      });
 
-        function animate() {
-            requestAnimationFrame(animate);
+      const mainMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mainMaterial);
+      scene.add(mainMesh);
 
-            // Smooth mouse interpolation for that "weighty" feel
-            mouse.x += (targetMouse.x - mouse.x) * 0.08;
-            mouse.y += (targetMouse.y - mouse.y) * 0.08;
+      window.addEventListener("mousemove", e => {
+        targetMouse.x = e.clientX / window.innerWidth;
+        targetMouse.y = 1.0 - e.clientY / window.innerHeight;
+      });
 
-            // 1. Draw trail to Buffer A (based on previous Frame B)
-            trailMaterial.uniforms.uBuffer.value = bufferB.texture;
-            trailMaterial.uniforms.uMouse.value = mouse;
-            renderer.setRenderTarget(bufferA);
-            renderer.render(bufferScene, camera);
+      window.addEventListener("resize", onResize);
+    }
 
-            // 2. Switch buffers (Ping-Pong)
-            let temp = bufferA;
-            bufferA = bufferB;
-            bufferB = temp;
+    function animate() {
+      requestAnimationFrame(animate);
 
-            // 3. Final display (Reveal second image clearly through the mask)
-            mainMaterial.uniforms.tMask.value = bufferB.texture;
-            renderer.setRenderTarget(null);
-            renderer.render(scene, camera);
-        }
+      mouse.lerp(targetMouse, 0.08);
 
-        window.addEventListener('resize', () => {
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            trailMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
-        });
+      trailMaterial.uniforms.uBuffer.value = bufferB.texture;
+      renderer.setRenderTarget(bufferA);
+      renderer.render(bufferScene, camera);
 
-        init();
+      const temp = bufferA;
+      bufferA = bufferB;
+      bufferB = temp;
+
+      mainMaterial.uniforms.tMask.value = bufferB.texture;
+      renderer.setRenderTarget(null);
+      renderer.render(scene, camera);
+    }
+
+    function onResize() {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      trailMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+
+      bufferA.setSize(window.innerWidth, window.innerHeight);
+      bufferB.setSize(window.innerWidth, window.innerHeight);
+    }
   </script>
-</body>
 
+</body>
 </html>
